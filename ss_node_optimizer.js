@@ -21,16 +21,16 @@ async function operator(proxies = [], targetPlatform, context) {
         '香港|HK|Hong Kong|HongKong': '🇭🇰 香港',
         '台湾|TW|Taiwan|新北|彰化': '🇨🇳 台湾',
         '日本|JP|Japan|东京|大阪|埼玉': '🇯🇵 日本',
-        '韩国|KR|Korea|春川|首尔': '🇰🇷 韩国',
+        '韩国|KR|KOR|Korea|春川|首尔': '🇰🇷 韩国',
         '新加坡|SG|Singapore|狮城': '🇸🇬 新加坡',
         '美国|US|America|United States|波特兰|洛杉矶|西雅图|芝加哥|硅谷|纽约': '🇺🇸 美国',
-        '英国|UK|England|United Kingdom|伦敦': '🇬🇧 英国',
+        '英国|UK|GBR|England|United Kingdom|伦敦': '🇬🇧 英国',
         '德国|DE|Germany|法兰克福': '🇩🇪 德国',
         '法国|FR|France|巴黎': '🇫🇷 法国',
         '澳大利亚|AU|Australia|悉尼|墨尔本': '🇦🇺 澳大利亚',
         '阿联酋|AE|迪拜': '🇦🇪 阿联酋',
         '印度|IN|India|孟买': '🇮🇳 印度',
-        '土耳其|TR|Turkey|伊斯坦布尔': '🇹🇷 土耳其',
+        '土耳其|TR|TUR|Turkey|伊斯坦布尔': '🇹🇷 土耳其',
         '荷兰|NL|Netherlands|阿姆斯特丹': '🇳🇱 荷兰',
         '俄罗斯|RU|Russia|莫斯科|伯力': '🇷🇺 俄罗斯',
         '加拿大|CA|Canada|蒙特利尔|温哥华': '🇨🇦 加拿大',
@@ -41,6 +41,7 @@ async function operator(proxies = [], targetPlatform, context) {
         '印度尼西亚|印尼|ID|Indonesia|雅加达': '🇮🇩 印尼',
         '越南|VN|Vietnam|胡志明': '🇻🇳 越南',
         '巴西|BR|Brazil|圣保罗': '🇧🇷 巴西',
+        '爱沙尼亚|EE|Estonia': '🇪🇪 爱沙尼亚',
     };
 
     const groupCount = {};
@@ -75,9 +76,9 @@ async function operator(proxies = [], targetPlatform, context) {
         let subName = String(proxy._subName || proxy.collectionName || name); 
         
         // 按照用户需求匹配：ss, dj, 本地为 h
-        if (/ss/i.test(subName)) {
+        if (/shadowsocks/i.test(subName)) {
             source = 'ss';
-        } else if (/dj/i.test(subName)) {
+        } else if (/顶级机场/i.test(subName)) {
             source = 'dj';
         } else {
             source = 'h'; // 默认为本地(h)
@@ -90,18 +91,47 @@ async function operator(proxies = [], targetPlatform, context) {
     // ==========================================
     // 2. 解锁连通性检测逻辑
     // ==========================================
-    if ($ && $.ProxyUtils && $.http) {
+    // 兼容不同的网络请求挂载点
+    const httpClient = ($ && $.http) || (typeof $httpClient !== 'undefined' ? $httpClient : null);
+    
+    if ($ && $.ProxyUtils && httpClient) {
         let internalProxies;
         try {
             // 将基础 proxy 信息转译为 Sub-Store 底层测试用格式
             internalProxies = $.ProxyUtils.produce(proxies, 'ClashMeta', 'internal');
         } catch (e) {
-            $.info(`节点转换失败，将跳过解锁测试: ${e.message}`);
+            console.log(`[解锁检测] 节点转换失败: ${e.message}`);
         }
 
         if (internalProxies && internalProxies.length > 0) {
             const concurrency = 8; // 控制并发量，避免导致自建 docker 后端卡死或主动熔断
             
+            // 封装兼容不同写法的请求，返回状态
+            const doRequest = (url, node, timeout) => {
+                return new Promise((resolve) => {
+                    const options = { url, timeout, 'policy-descriptor': node };
+                     // 兼容某些环境需要 proxy
+                     options.proxy = node;
+
+                    try {
+                        // 使用 $.http.get() (如果返回 Promise)
+                        const req = httpClient.get(options, (err, res, body) => {
+                            // 回调方式支持 (Surge 规范的 $httpClient)
+                            if (err) resolve({ status: -1, error: err });
+                            else resolve({ status: res.status || res.statusCode, body });
+                        });
+                        
+                        // 兼容 Promise 方式返回 (Sub-Store axios 封装)
+                        if (req && req.then) {
+                            req.then(res => resolve({ status: res.status, body: res.body || res.data }))
+                               .catch(err => resolve({ status: err.response ? err.response.status : -2 }));
+                        }
+                    } catch(e) {
+                        resolve({ status: -3, error: e.message });
+                    }
+                });
+            };
+
             async function testNode(proxy, node) {
                 let tags = [];
                 const reqs = [];
@@ -109,58 +139,33 @@ async function operator(proxies = [], targetPlatform, context) {
 
                 // 1. Netflix 测试
                 reqs.push((async () => {
-                    try {
-                        const res = await $.http.get({ url: 'https://www.netflix.com/title/81215567', 'policy-descriptor': node, timeout });
-                        if (res.status === 200) tags.push('NF');
-                        // 404 往往是版权剧未解锁，但是能看自制剧
-                        else if (res.status === 404) tags.push('NF自制');
-                    } catch(e) {}
+                    const res = await doRequest('https://www.netflix.com/title/81215567', node, timeout);
+                    if (res.status === 200) tags.push('NF');
+                    else if (res.status === 404) tags.push('NF自制');
                 })());
 
                 // 2. ChatGPT 测试
                 reqs.push((async () => {
-                    try {
-                        const res = await $.http.get({ url: 'https://chatgpt.com/', 'policy-descriptor': node, timeout });
-                        // 常见 403 即被 Cloudflare / OpenAI 阻断
-                        if (res.status === 200 || res.status === 301 || res.status === 302 || res.status === 307) {
-                            tags.push('GPT');
-                        }
-                    } catch(e) {}
+                    const res = await doRequest('https://chatgpt.com/', node, timeout);
+                    if (res.status === 200 || res.status === 301 || res.status === 302 || res.status === 307) {
+                        tags.push('GPT');
+                    }
                 })());
 
                 // 3. Claude 测试
                 reqs.push((async () => {
-                    try {
-                        const res = await $.http.get({ url: 'https://claude.ai/login', 'policy-descriptor': node, timeout });
-                        if (res.status === 200 && res.body && !res.body.includes('App unavailable')) {
-                            tags.push('Claude');
-                        }
-                    } catch(e) {}
+                    const res = await doRequest('https://claude.ai/login', node, timeout);
+                    if (res.status === 200 && res.body && !String(res.body).includes('App unavailable')) {
+                        tags.push('Claude');
+                    }
                 })());
 
                 // 4. Gemini 测试
                 reqs.push((async () => {
-                    try {
-                        const res = await $.http.get({ url: 'https://gemini.google.com/', 'policy-descriptor': node, timeout });
-                        if (res.status === 200 || res.status === 302 || res.status === 301) tags.push('Gemini');
-                    } catch(e) {}
-                })());
-
-                // 5. Disney+ 测试
-                reqs.push((async () => {
-                    try {
-                        const res = await $.http.get({ url: 'https://www.disneyplus.com/', 'policy-descriptor': node, timeout });
-                        if (res.status === 200 || res.status === 301 || res.status === 302) tags.push('DP');
-                    } catch(e) {}
-                })());
-                
-                // 6. Spotify 测试
-                reqs.push((async () => {
-                    try {
-                        const res = await $.http.get({ url: 'https://spclient.wg.spotify.com/signup/public/v1/account', 'policy-descriptor': node, timeout });
-                        // 常见 311 报错意味着该区域不支持 Spotify 服务
-                        if (res.status === 200 || res.status === 400) tags.push('SP');
-                    } catch(e) {}
+                    const res = await doRequest('https://gemini.google.com/', node, timeout);
+                    if (res.status === 200 || res.status === 302 || res.status === 301) {
+                        tags.push('Gemini');
+                    }
                 })());
 
                 // 等待所有检测均结束
@@ -175,6 +180,11 @@ async function operator(proxies = [], targetPlatform, context) {
                 const promises = batch.map((proxy, index) => testNode(proxy, internalBatch[index]));
                 await Promise.allSettled(promises);
             }
+        }
+    } else {
+        // 如果没有支持库，在第一个节点里插入报错，方便用户溯源
+        if (proxies.length > 0) {
+            proxies[0]._tags = ['环境不支持检测'];
         }
     }
 
