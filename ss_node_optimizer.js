@@ -42,6 +42,12 @@ async function operator(proxies = [], targetPlatform, context) {
         '丹麦|DK|DNK|Denmark|哥本哈根': '🇩🇰 丹麦'
     };
 
+    // 预编译地区正则表达式，提升性能
+    const compiledRegionMap = Object.entries(regionMap).map(([key, value]) => ({
+        pattern: new RegExp(key, 'i'),
+        label: value
+    }));
+
     const groupCount = {};
 
     // --- 过滤无效节点与不安全协议 ---
@@ -53,10 +59,11 @@ async function operator(proxies = [], targetPlatform, context) {
         }
 
         // 2. 剔除 skip-cert-verify 为 true 的节点（规避中间人风险或错误配置）
+        const type = String(proxy.type || '').toLowerCase();
         if (proxy['skip-cert-verify'] === true || String(proxy['skip-cert-verify']).toLowerCase() === 'true') {
             // 如果是 Hysteria2 或 VLESS 等高性能协议，保留但加警告标
-            if (['hysteria2', 'vless', 'tuic'].includes(nodeType)) {
-                proxy.name = '⚠️' + proxy.name; // 标记该节点证书校验已跳过
+            if (['hysteria2', 'vless', 'tuic', 'hysteria'].includes(type)) {
+                if (!n.startsWith('⚠️')) proxy.name = '⚠️' + n; // 标记该节点证书校验已跳过
             } else {
                 return false; // 其他普通协议开启 SCERT 直接剔除
             }
@@ -96,28 +103,30 @@ async function operator(proxies = [], targetPlatform, context) {
 
         const type = String(proxy.type || '').toLowerCase();
         const priority = protocolPriority[type] || 10; 
+        const key = `${server}:${proxy.port || ''}`; // 结合端口去重
 
-        if (uniqueServers.has(server)) {
-            const existing = uniqueServers.get(server);
-            // 遇到冲突时，保留更高优先级的节点
+        if (uniqueServers.has(key)) {
+            const existing = uniqueServers.get(key);
             if (priority > existing.priority) {
-                uniqueServers.set(server, { priority, proxy });
+                uniqueServers.set(key, { priority, proxy });
             }
         } else {
-            uniqueServers.set(server, { priority, proxy });
+            uniqueServers.set(key, { priority, proxy });
         }
     });
     
     // 依照原数组顺序，筛出被保留下的节点
     const dedupedProxies = [];
+    const seenServers = new Set();
     proxies.forEach(proxy => {
         if (!proxy.server) {
             dedupedProxies.push(proxy);
             return;
         }
-        // 如果当前节点等同于 Map 中选出的该冲突 IP 的最优解，则予以保留
-        if (uniqueServers.get(proxy.server).proxy === proxy) {
+        const key = `${proxy.server}:${proxy.port || ''}`;
+        if (uniqueServers.get(key).proxy === proxy && !seenServers.has(key)) {
             dedupedProxies.push(proxy);
+            seenServers.add(key);
         }
     });
     proxies = dedupedProxies;
@@ -127,9 +136,9 @@ async function operator(proxies = [], targetPlatform, context) {
         
         // --- 解析地区 ---
         let region = '🏳️‍🌈 未知';
-        for (const key in regionMap) {
-            if (new RegExp(key, 'i').test(name)) {
-                region = regionMap[key];
+        for (const item of compiledRegionMap) {
+            if (item.pattern.test(name)) {
+                region = item.label;
                 break;
             }
         }
