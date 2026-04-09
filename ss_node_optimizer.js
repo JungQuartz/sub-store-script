@@ -54,7 +54,12 @@ async function operator(proxies = [], targetPlatform, context) {
 
         // 2. 剔除 skip-cert-verify 为 true 的节点（规避中间人风险或错误配置）
         if (proxy['skip-cert-verify'] === true || String(proxy['skip-cert-verify']).toLowerCase() === 'true') {
-            return false;
+            // 如果是 Hysteria2 或 VLESS 等高性能协议，保留但加警告标
+            if (['hysteria2', 'vless', 'tuic'].includes(nodeType)) {
+                proxy.name = '⚠️' + proxy.name; // 标记该节点证书校验已跳过
+            } else {
+                return false; // 其他普通协议开启 SCERT 直接剔除
+            }
         }
 
         // 3. 剔除未采用 AEAD 加密的旧版 SS 节点（防主动探测）
