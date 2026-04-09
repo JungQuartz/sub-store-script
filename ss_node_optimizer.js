@@ -36,7 +36,10 @@ async function operator(proxies = [], targetPlatform, context) {
         '瑞典|SE|Sweden|斯德哥尔摩': '🇸🇪 瑞典',
         '墨西哥|MX|Mexico|克雷塔罗': '🇲🇽 墨西哥',
         '波兰|PL|POL|Poland|华沙': '🇵🇱 波兰',
-        '南非|ZA|South Africa|非洲|约翰内斯堡': '🇿🇦 南非'
+        '南非|ZA|South Africa|非洲|约翰内斯堡': '🇿🇦 南非',
+        '西班牙|ES|ESP|Spain|马德里': '🇪🇸 西班牙',
+        '冰岛|IS|ISL|Iceland|雷克雅未克': '🇮🇸 冰岛',
+        '丹麦|DK|DNK|Denmark|哥本哈根': '🇩🇰 丹麦'
     };
 
     const groupCount = {};
