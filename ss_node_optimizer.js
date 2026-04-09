@@ -173,49 +173,51 @@ async function operator(proxies = [], targetPlatform, context) {
     // ==========================================
     // 4. 从旁路 Python 引擎拉取解锁缓存标签
     // ==========================================
+    // ==========================================
+    // 4. 从旁路 Python 引擎拉取解锁缓存标签
+    // ==========================================
     try {
-        // 从 Sub-Store 参数中获取 api_url (例如: script.js#api_url=http://192.168.1.1:8000)
         const args = (typeof $arguments !== 'undefined' && $arguments) ? $arguments : {};
         const baseUrl = args.api_url || args.apiUrl || 'http://192.168.100.191:8000';
-        // 确保 URL 格式正确，自动补全路径
         const apiUrl = baseUrl.endsWith('/api/cache') ? baseUrl : `${baseUrl.replace(/\/$/, '')}/api/cache`;
 
-        const httpClient = ($ && $.http) || (typeof $httpClient !== 'undefined' ? $httpClient : null);
-        if (httpClient) {
-            // 设置了 3000ms 超时，确保不因 Python 端没开而导致主任务阻滞卡死
+        let cacheData = null;
+        if (typeof axios !== 'undefined') {
+            const response = await axios.get(apiUrl, { timeout: 3000 });
+            cacheData = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+        } else if (typeof $httpClient !== 'undefined') {
             const cacheResp = await new Promise((resolve) => {
-                const req = httpClient.get({ url: apiUrl, timeout: 3000 }, (err, res, body) => {
+                $httpClient.get({ url: apiUrl, timeout: 3000 }, (err, res, body) => {
                     if (err) resolve(null);
                     else resolve(body);
                 });
-                
-                // 兼容内部封装的 Promise
-                if (req && typeof req.then === 'function') {
-                    req.then(r => resolve(r.body || r.data)).catch(() => resolve(null));
+            });
+            if (cacheResp) cacheData = typeof cacheResp === 'string' ? JSON.parse(cacheResp) : cacheResp;
+        } else if (typeof fetch !== 'undefined') {
+            const response = await fetch(apiUrl, { signal: AbortSignal.timeout(3000) });
+            cacheData = await response.json();
+        } else {
+            console.log("[Python联动] 无法获取缓存：缺少 axios / $httpClient / fetch");
+        }
+
+        if (cacheData && cacheData.status === 'ok' && cacheData.data) {
+            const serverResultMap = cacheData.data;
+            proxies.forEach(proxy => {
+                const srv = proxy.server;
+                if (srv && serverResultMap[srv]) {
+                    const unlockTags = serverResultMap[srv];
+                    if (unlockTags && unlockTags.length > 0) {
+                        proxy.name = proxy.name + " | " + unlockTags.join(' ');
+                    }
                 }
             });
-
-            if (cacheResp) {
-                const cacheData = JSON.parse(cacheResp);
-                if (cacheData && cacheData.status === 'ok' && cacheData.data) {
-                    const serverResultMap = cacheData.data;
-                    
-                    proxies.forEach(proxy => {
-                        const srv = proxy.server;
-                        if (srv && serverResultMap[srv]) {
-                            const unlockTags = serverResultMap[srv];
-                            if (unlockTags && unlockTags.length > 0) {
-                                proxy.name = proxy.name + " | " + unlockTags.join(' ');
-                            }
-                        }
-                    });
-                }
-            }
         }
     } catch (e) {
-        // 请求缓存失败静默放行，只打印错误防止 Sub-Store 中断抛锚
         console.log("[Python联动] 获取 AI 测流缓存失败: " + e.message);
     }
+
+    return proxies;
+}
 
     return proxies;
 }
