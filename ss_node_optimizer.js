@@ -104,7 +104,9 @@ async function operator(proxies = [], targetPlatform, context) {
 
         const type = String(proxy.type || '').toLowerCase();
         const priority = protocolPriority[type] || 10; 
-        const key = `${server}:${proxy.port || ''}`; // 结合端口去重
+        // 获取路径信息 (适配 WebSocket 的 path 或 gRPC 的 serviceName)
+        const path = proxy.path || (proxy['ws-opts'] && proxy['ws-opts'].path) || (proxy['grpc-opts'] && proxy['grpc-opts'].serviceName) || '';
+        const key = `${server}:${proxy.port || ''}:${path}`; // 结合端口与路径去重，name 依然忽略以保持同配置去重特性
 
         if (uniqueServers.has(key)) {
             const existing = uniqueServers.get(key);
@@ -124,7 +126,8 @@ async function operator(proxies = [], targetPlatform, context) {
             dedupedProxies.push(proxy);
             return;
         }
-        const key = `${proxy.server}:${proxy.port || ''}`;
+        const path = proxy.path || (proxy['ws-opts'] && proxy['ws-opts'].path) || (proxy['grpc-opts'] && proxy['grpc-opts'].serviceName) || '';
+        const key = `${proxy.server}:${proxy.port || ''}:${path}`;
         if (uniqueServers.get(key).proxy === proxy && !seenServers.has(key)) {
             dedupedProxies.push(proxy);
             seenServers.add(key);
