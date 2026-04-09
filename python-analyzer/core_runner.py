@@ -45,7 +45,7 @@ async def test_proxy(proxy_dict, port):
     proxy_url = f"http://127.0.0.1:{port}"
     
     try:
-        async with httpx.AsyncClient(proxy=proxy_url, timeout=15.0, verify=False) as client:
+        async with httpx.AsyncClient(proxy=proxy_url, timeout=15.0, verify=False, follow_redirects=True) as client:
             # 1. 测 Google (连通性测试)
             try:
                 r0 = await client.get("https://www.google.com/generate_204", follow_redirects=True)
@@ -74,7 +74,7 @@ async def test_proxy(proxy_dict, port):
             # TODO: 后续在这里查真知 IP 物理库
             
     except Exception as e:
-        logger.debug(f"节点测试连接总控级超时/错误 {proxy_dict['name']}: {e}")
+        logger.error(f"节点测试连接总控级超时/错误 {proxy_dict['name']}: {type(e).__name__} - {e}")
     finally:
         if p:
             p.terminate() # 打流结束，毫不留情地杀掉内核
