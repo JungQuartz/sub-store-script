@@ -146,6 +146,7 @@ async function operator(proxies = [], targetPlatform, context) {
                 break;
             }
         }
+        proxy._regionLabel = region; // 缓存地区用于排序
 
         // --- 解析倍率 ---
         let rate = '1.0';
@@ -156,6 +157,7 @@ async function operator(proxies = [], targetPlatform, context) {
         } else if (/高倍/.test(name)) {
             rate = '高倍';
         }
+        const displayRate = (rate === '高倍' || isNaN(parseFloat(rate))) ? rate : parseFloat(rate).toFixed(1);
         const rateStr = rate === '高倍' ? rate : `${rate}×`;
 
         // --- 识别来源 ---
@@ -186,7 +188,7 @@ async function operator(proxies = [], targetPlatform, context) {
         const indexStr = groupCount[groupKey].toString().padStart(2, '0');
         const prefix = proxy._isUnsafe ? '⚠️' : '';
 
-        proxy.name = `${prefix}${region} | ${source} | ${rateStr} | ${indexStr}${tagStr}`;
+        proxy.name = `${prefix}${region}-${source}-${indexStr}-${displayRate}${tagStr}`;
     });
 
     // ==========================================
@@ -222,15 +224,38 @@ async function operator(proxies = [], targetPlatform, context) {
                 const srv = proxy.server;
                 if (srv && serverResultMap[srv]) {
                     const unlockTags = serverResultMap[srv];
-                    if (unlockTags && unlockTags.length > 0) {
-                        proxy.name = proxy.name + " | " + unlockTags.join(' ');
-                    }
+                        if (unlockTags && unlockTags.length > 0) {
+                            proxy.name = proxy.name + (proxy.name.includes(' | ') ? ' ' : ' | ') + unlockTags.join(' ');
+                        }
                 }
             });
         }
     } catch (e) {
         console.log("[Python联动] 获取 AI 测流缓存失败: " + e.message);
     }
+
+    // 5. 最终优先级排序
+    const regionPriority = {
+        '🇺🇸 美国': 1,
+        '🇯🇵 日本': 2,
+        '🇭🇰 香港': 3,
+        '🇸🇬 新加坡': 4
+    };
+
+    proxies.sort((a, b) => {
+        // 1. 安全状态排序 (⚠️ 警告节点强制排在最后)
+        const aUnsafe = a._isUnsafe ? 1 : 0;
+        const bUnsafe = b._isUnsafe ? 1 : 0;
+        if (aUnsafe !== bUnsafe) return aUnsafe - bUnsafe;
+
+        // 2. 地区优先级排序 (美/日/港/新)
+        const aPrio = regionPriority[a._regionLabel] || 99;
+        const bPrio = regionPriority[b._regionLabel] || 99;
+        if (aPrio !== bPrio) return aPrio - bPrio;
+
+        // 3. 同级按名称自然排序
+        return (a.name || '').localeCompare(b.name || '');
+    });
 
     return proxies;
 }
