@@ -45,31 +45,48 @@ async def test_proxy(proxy_dict, port):
     proxy_url = f"http://127.0.0.1:{port}"
     
     try:
-        async with httpx.AsyncClient(proxy=proxy_url, timeout=15.0, verify=False, follow_redirects=True) as client:
+        # 使用模拟浏览器的头信息，防止被 Cloudflare/OpenAI 误判为爬虫直接 403
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7"
+        }
+        async with httpx.AsyncClient(proxy=proxy_url, timeout=15.0, verify=False, follow_redirects=True, headers=headers) as client:
             # 1. 测 Google (连通性测试)
             try:
-                r0 = await client.get("https://www.google.com/generate_204", follow_redirects=True)
+                r0 = await client.get("https://www.google.com/generate_204")
                 logger.info(f"Google test for {proxy_dict['name']}: {r0.status_code}")
             except Exception as e:
                 logger.info(f"Google test failed for {proxy_dict['name']}: {e}")
                 
-            # 2. 测 GPT
+            # 2. 测 ChatGPT (OpenAI)
             try:
-                r1 = await client.get("https://chatgpt.com/", follow_redirects=True)
-                if r1.status_code in (200, 301, 302, 307):
+                # 尝试访问后端鉴权页或主页，由于 Cloudflare 策略，403 通常代表 IP 被封，而正常响应或 401 代表节点可用
+                r1 = await client.get("https://chatgpt.com/")
+                # 如果返回 200 或 401/403 (但带有特定特征) 情况较复杂，通常 200 表示完全解锁
+                if r1.status_code < 400:
                     tags.append("GPT")
-            except Exception as e:
-                pass
+                elif r1.status_code == 403 and "cloudflare" not in r1.text.lower():
+                    # 某些 IP 尽管被 OpenAI 拒发 Token 但能进入页面
+                    tags.append("GPT")
+            except Exception: pass
                 
-            # 2. 测 Netflix
+            # 3. 测 Netflix
             try:
-                r2 = await client.get("https://www.netflix.com/title/81215567", follow_redirects=True)
+                r2 = await client.get("https://www.netflix.com/title/81215567")
                 if r2.status_code == 200:
                     tags.append("NF")
                 elif r2.status_code == 404:
                     tags.append("NF自制")
-            except Exception as e:
-                pass
+            except Exception: pass
+
+            # 4. 测 Gemini (Google AI)
+            try:
+                # Gemini 通常在特定地区可用，访问主页 200 即代表解锁
+                r3 = await client.get("https://gemini.google.com/")
+                if r3.status_code == 200:
+                    tags.append("Gemini")
+            except Exception: pass
             
             # TODO: 后续在这里查真知 IP 物理库
             

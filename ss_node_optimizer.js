@@ -174,11 +174,17 @@ async function operator(proxies = [], targetPlatform, context) {
     // 4. 从旁路 Python 引擎拉取解锁缓存标签
     // ==========================================
     try {
+        // 从 Sub-Store 参数中获取 api_url (例如: script.js#api_url=http://192.168.1.1:8000)
+        const args = (typeof $arguments !== 'undefined' && $arguments) ? $arguments : {};
+        const baseUrl = args.api_url || args.apiUrl || 'http://192.168.100.191:8000';
+        // 确保 URL 格式正确，自动补全路径
+        const apiUrl = baseUrl.endsWith('/api/cache') ? baseUrl : `${baseUrl.replace(/\/$/, '')}/api/cache`;
+
         const httpClient = ($ && $.http) || (typeof $httpClient !== 'undefined' ? $httpClient : null);
         if (httpClient) {
             // 设置了 3000ms 超时，确保不因 Python 端没开而导致主任务阻滞卡死
             const cacheResp = await new Promise((resolve) => {
-                const req = httpClient.get({ url: 'http://192.168.100.191:8000/api/cache', timeout: 3000 }, (err, res, body) => {
+                const req = httpClient.get({ url: apiUrl, timeout: 3000 }, (err, res, body) => {
                     if (err) resolve(null);
                     else resolve(body);
                 });

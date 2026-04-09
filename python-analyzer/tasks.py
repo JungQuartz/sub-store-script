@@ -5,9 +5,11 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from core_runner import verify_nodes_batch
 
-# 环境变量传递或写死您 Sub-Store 的原始导出（未二次加工前或者已用通用模板化处理后）的链接
-# 注意：一定要把 target 指定为 ClashMeta 格式，Python 解析会非常简单！
-SUB_URL = os.getenv("SUB_URL", "[REDACTED_LINK]") 
+# 环境变量传递链接，建议通过环境变量设置以保护隐私
+SUB_URL = os.getenv("SUB_URL")
+if not SUB_URL:
+    print("错误: 未通过环境变量 SUB_URL 提供订阅链接。请设置该变量后重启脚本。")
+    # 在生产环境下可以抛出异常或退出
 CACHE_FILE = "results.json"
 
 logging.basicConfig(level=logging.INFO)
