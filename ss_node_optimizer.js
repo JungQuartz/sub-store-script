@@ -170,5 +170,46 @@ async function operator(proxies = [], targetPlatform, context) {
         proxy.name = `${region} | ${source} | ${rateStr} | ${indexStr}${tagStr}`;
     });
 
+    // ==========================================
+    // 4. 从旁路 Python 引擎拉取解锁缓存标签
+    // ==========================================
+    try {
+        const httpClient = ($ && $.http) || (typeof $httpClient !== 'undefined' ? $httpClient : null);
+        if (httpClient) {
+            // 设置了 3000ms 超时，确保不因 Python 端没开而导致主任务阻滞卡死
+            const cacheResp = await new Promise((resolve) => {
+                const req = httpClient.get({ url: 'http://192.168.100.191:8000/api/cache', timeout: 3000 }, (err, res, body) => {
+                    if (err) resolve(null);
+                    else resolve(body);
+                });
+                
+                // 兼容内部封装的 Promise
+                if (req && typeof req.then === 'function') {
+                    req.then(r => resolve(r.body || r.data)).catch(() => resolve(null));
+                }
+            });
+
+            if (cacheResp) {
+                const cacheData = JSON.parse(cacheResp);
+                if (cacheData && cacheData.status === 'ok' && cacheData.data) {
+                    const serverResultMap = cacheData.data;
+                    
+                    proxies.forEach(proxy => {
+                        const srv = proxy.server;
+                        if (srv && serverResultMap[srv]) {
+                            const unlockTags = serverResultMap[srv];
+                            if (unlockTags && unlockTags.length > 0) {
+                                proxy.name = proxy.name + " | " + unlockTags.join(' ');
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    } catch (e) {
+        // 请求缓存失败静默放行，只打印错误防止 Sub-Store 中断抛锚
+        console.log("[Python联动] 获取 AI 测流缓存失败: " + e.message);
+    }
+
     return proxies;
 }
