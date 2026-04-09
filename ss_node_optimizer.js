@@ -44,15 +44,78 @@ async function operator(proxies = [], targetPlatform, context) {
 
     const groupCount = {};
 
-    // --- 过滤无效的说明 / 通知节点 ---
+    // --- 过滤无效节点与不安全协议 ---
     proxies = proxies.filter(proxy => {
         const n = proxy.name || '';
-        // 匹配日期 (如2026-05-09), 流量 (如 71.42G / 1000.00G), 及其它通知用语
+        // 1. 匹配日期 (如2026-05-09), 流量 (如 71.42G / 1000.00G), 及其它通知用语
         if (/(到期|有效|剩余|过期|流量|测试|更新|套餐|官网|群|联系客服|通知|\d{4}[-/]\d{2}[-/]\d{2}|\b\d+(\.\d+)?\s*[MGT]B?\s*[/｜|]\s*\d+(\.\d+)?\s*[MGT]B?)/i.test(n)) {
             return false;
         }
+
+        // 2. 剔除 skip-cert-verify 为 true 的节点（规避中间人风险或错误配置）
+        if (proxy['skip-cert-verify'] === true || String(proxy['skip-cert-verify']).toLowerCase() === 'true') {
+            return false;
+        }
+
+        // 3. 剔除未采用 AEAD 加密的旧版 SS 节点（防主动探测）
+        if (proxy.type === 'ss' || proxy.type === 'shadowsocks') {
+            const cipher = proxy.cipher || proxy.method || proxy.encryptMethod || '';
+            // 现代 AEAD 加密通常标有 gcm 或 poly1305 (如 aes-128-gcm, chacha20-ietf-poly1305)
+            if (!/gcm|poly1305/i.test(cipher)) {
+                return false;
+            }
+        }
+
         return true;
     });
+
+    // --- 根据 Server 地址去重，按协议优先级判定去留 ---
+    const protocolPriority = {
+        'hysteria2': 100,
+        'hysteria': 95,
+        'vless': 90,
+        'trojan': 80,
+        'ss': 70,
+        'shadowsocks': 70,
+        'ssr': 60,
+        'shadowsocksr': 60,
+        'vmess': 50
+    };
+    
+    // 用于记录每个 server 对应的最高优先级及其代理实例
+    const uniqueServers = new Map();
+
+    proxies.forEach(proxy => {
+        const server = proxy.server;
+        if (!server) return; 
+
+        const type = String(proxy.type || '').toLowerCase();
+        const priority = protocolPriority[type] || 10; 
+
+        if (uniqueServers.has(server)) {
+            const existing = uniqueServers.get(server);
+            // 遇到冲突时，保留更高优先级的节点
+            if (priority > existing.priority) {
+                uniqueServers.set(server, { priority, proxy });
+            }
+        } else {
+            uniqueServers.set(server, { priority, proxy });
+        }
+    });
+    
+    // 依照原数组顺序，筛出被保留下的节点
+    const dedupedProxies = [];
+    proxies.forEach(proxy => {
+        if (!proxy.server) {
+            dedupedProxies.push(proxy);
+            return;
+        }
+        // 如果当前节点等同于 Map 中选出的该冲突 IP 的最优解，则予以保留
+        if (uniqueServers.get(proxy.server).proxy === proxy) {
+            dedupedProxies.push(proxy);
+        }
+    });
+    proxies = dedupedProxies;
 
     proxies.forEach(proxy => {
         let name = proxy.name || '';
