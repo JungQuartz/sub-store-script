@@ -1,0 +1,8 @@
+.venv/
+cache.db
+mihomo
+server.log
+results.json
+temp_conf_*.yaml
+test_one.py
+com.pipi.analyzer.plist

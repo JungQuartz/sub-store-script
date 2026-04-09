@@ -7,7 +7,7 @@ from core_runner import verify_nodes_batch
 
 # 环境变量传递或写死您 Sub-Store 的原始导出（未二次加工前或者已用通用模板化处理后）的链接
 # 注意：一定要把 target 指定为 ClashMeta 格式，Python 解析会非常简单！
-SUB_URL = os.getenv("SUB_URL", "http://192.168.100.191:3000/download/xxx?target=ClashMeta") 
+SUB_URL = os.getenv("SUB_URL", "[REDACTED_LINK]") 
 CACHE_FILE = "results.json"
 
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +21,14 @@ async def run_test_job():
             resp.raise_for_status()
             
             import yaml
-            data = yaml.safe_load(resp.text)
+            # 解决部分特殊字符导致的 YAML 解析失败
+            try:
+                data = yaml.safe_load(resp.text)
+            except Exception as ye:
+                logger.warning(f"[Job] YAML 解析失败 ({ye})，尝试清洗数据...")
+                cleaned_text = resp.text.encode('ascii', 'ignore').decode('ascii')
+                data = yaml.safe_load(cleaned_text)
+
             proxies = data.get("proxies", [])
     except Exception as e:
         logger.error(f"[Job] 获取并解析节点集失败: {e}")

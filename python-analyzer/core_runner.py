@@ -31,43 +31,54 @@ async def test_proxy(proxy_dict, port):
     # 如果系统识别不到，此处代码会有引发 FileNotFound 异常的可能。
     p = None
     try:
-        p = subprocess.Popen(["./mihomo", "-d", ".", "-f", config_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        p = subprocess.Popen(["./mihomo", "-d", ".", "-f", config_path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     except FileNotFoundError:
         logger.error("未找到局部可执行的 ./mihomo 内核文件！请下载内核解压放入此文件夹！")
         if os.path.exists(config_path):
             os.remove(config_path)
         return []
 
-    # 给内核 1.2 秒时间完整启动各种握手端口绑定
-    await asyncio.sleep(1.2)
+    # 给内核 10 秒时间完整启动各种握手端口绑定
+    await asyncio.sleep(10.0)
     
     tags = []
     proxy_url = f"http://127.0.0.1:{port}"
     
     try:
-        async with httpx.AsyncClient(proxies=proxy_url, timeout=6.0, verify=False) as client:
-            # 1. 测 GPT
+        async with httpx.AsyncClient(proxy=proxy_url, timeout=15.0, verify=False) as client:
+            # 1. 测 Google (连通性测试)
             try:
-                r1 = await client.get("https://chatgpt.com/")
+                r0 = await client.get("https://www.google.com/generate_204", follow_redirects=True)
+                logger.info(f"Google test for {proxy_dict['name']}: {r0.status_code}")
+            except Exception as e:
+                logger.info(f"Google test failed for {proxy_dict['name']}: {e}")
+                
+            # 2. 测 GPT
+            try:
+                r1 = await client.get("https://chatgpt.com/", follow_redirects=True)
                 if r1.status_code in (200, 301, 302, 307):
                     tags.append("GPT")
-            except Exception: pass
+            except Exception as e:
+                pass
                 
             # 2. 测 Netflix
             try:
-                r2 = await client.get("https://www.netflix.com/title/81215567")
+                r2 = await client.get("https://www.netflix.com/title/81215567", follow_redirects=True)
                 if r2.status_code == 200:
                     tags.append("NF")
                 elif r2.status_code == 404:
                     tags.append("NF自制")
-            except Exception: pass
+            except Exception as e:
+                pass
             
             # TODO: 后续在这里查真知 IP 物理库
             
     except Exception as e:
         logger.debug(f"节点测试连接总控级超时/错误 {proxy_dict['name']}: {e}")
     finally:
-        p.terminate() # 打流结束，毫不留情地杀掉内核
+        if p:
+            p.terminate() # 打流结束，毫不留情地杀掉内核
+            p.wait()
         try:
            os.remove(config_path)
         except OSError:
