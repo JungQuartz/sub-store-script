@@ -63,7 +63,8 @@ async function operator(proxies = [], targetPlatform, context) {
         if (proxy['skip-cert-verify'] === true || String(proxy['skip-cert-verify']).toLowerCase() === 'true') {
             // 如果是 Hysteria2 或 VLESS 等高性能协议，保留但加警告标
             if (['hysteria2', 'vless', 'tuic', 'hysteria'].includes(type)) {
-                if (!n.startsWith('⚠️')) proxy.name = '⚠️' + n; // 标记该节点证书校验已跳过
+                proxy._isUnsafe = true; // 缓存警告状态，防止被后续重命名覆盖
+                if (!n.startsWith('⚠️')) proxy.name = '⚠️' + n; 
             } else {
                 return false; // 其他普通协议开启 SCERT 直接剔除
             }
@@ -145,10 +146,10 @@ async function operator(proxies = [], targetPlatform, context) {
 
         // --- 解析倍率 ---
         let rate = '1.0';
-        // 第一种匹配：0.5x, 2倍；第二种匹配：倍率:1, 流量倍率：1.5
-        const rateMatch = name.match(/(\d+(?:\.\d+)?)\s*(?:x|X|×|倍)/i) || name.match(/倍率[:：\s]*(\d+(?:\.\d+)?)/i);
+        // 匹配 0.5x, 2倍, 倍率:1, 流量倍率 1.5 等
+        const rateMatch = name.match(/(\d+(?:\.\d+)?)\s*(?:x|X|×|倍)/i) || name.match(/(?:倍率|流量倍率)[:：\s]*(\d+(?:\.\d+)?)/i);
         if (rateMatch) {
-            rate = rateMatch[1];
+            rate = rateMatch[1] || rateMatch[2]; // 适配两种匹配模式
         } else if (/高倍/.test(name)) {
             rate = '高倍';
         }
@@ -180,8 +181,9 @@ async function operator(proxies = [], targetPlatform, context) {
         if (!groupCount[groupKey]) groupCount[groupKey] = 0;
         groupCount[groupKey]++;
         const indexStr = groupCount[groupKey].toString().padStart(2, '0');
+        const prefix = proxy._isUnsafe ? '⚠️' : '';
 
-        proxy.name = `${region} | ${source} | ${rateStr} | ${indexStr}${tagStr}`;
+        proxy.name = `${prefix}${region} | ${source} | ${rateStr} | ${indexStr}${tagStr}`;
     });
 
     // ==========================================
