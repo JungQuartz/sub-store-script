@@ -173,9 +173,6 @@ async function operator(proxies = [], targetPlatform, context) {
     // ==========================================
     // 4. 从旁路 Python 引擎拉取解锁缓存标签
     // ==========================================
-    // ==========================================
-    // 4. 从旁路 Python 引擎拉取解锁缓存标签
-    // ==========================================
     try {
         const args = (typeof $arguments !== 'undefined' && $arguments) ? $arguments : {};
         const baseUrl = args.api_url || args.apiUrl || 'http://192.168.100.191:8000';
@@ -219,5 +216,3 @@ async function operator(proxies = [], targetPlatform, context) {
     return proxies;
 }
 
-    return proxies;
-}
