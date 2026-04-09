@@ -1,22 +1,13 @@
 /**
- * Sub-Store 节点格式化及流媒体/AI解锁检测脚本
+ * Sub-Store 节点格式化精简版（纯净重命名）
  * 
  * 功能：
  * 1. 规范化命名：提取地区国旗、判断来源(ss/dj/h)、提取倍率。
- * 2. 解锁检测：并发检测 ChatGPT, Claude, Gemini, Netflix, Disney+, Spotify 解锁状态。
- * 3. 最终输出格式：🇭🇰 香港 | ss | 0.5× | NF GPT 01
- * 
- * 使用方式：
- * 在 Sub-Store 对应的订阅（或组合订阅）中，添加 "脚本操作" (Script Operator)，
- * 将此文件的代码贴入或通过 URL 引用即可生效。
+ * 2. 编号排版：按地区与来源自动生成连续编号。
+ * 3. 最终输出格式：🇭🇰 香港 | ss | 0.5× | 01
  */
 
 async function operator(proxies = [], targetPlatform, context) {
-    const $ = typeof $substore !== 'undefined' ? $substore : undefined;
-    
-    // ==========================================
-    // 1. 地区、国旗映射表
-    // ==========================================
     const regionMap = {
         '香港|HK|Hong Kong|HongKong': '🇭🇰 香港',
         '台湾|TW|Taiwan|新北|彰化': '🇨🇳 台湾',
@@ -42,11 +33,24 @@ async function operator(proxies = [], targetPlatform, context) {
         '越南|VN|Vietnam|胡志明': '🇻🇳 越南',
         '巴西|BR|Brazil|圣保罗': '🇧🇷 巴西',
         '爱沙尼亚|EE|Estonia': '🇪🇪 爱沙尼亚',
+        '瑞典|SE|Sweden|斯德哥尔摩': '🇸🇪 瑞典',
+        '墨西哥|MX|Mexico|克雷塔罗': '🇲🇽 墨西哥',
+        '波兰|PL|POL|Poland|华沙': '🇵🇱 波兰',
+        '南非|ZA|South Africa|非洲|约翰内斯堡': '🇿🇦 南非'
     };
 
     const groupCount = {};
 
-    // 预处理节点信息
+    // --- 过滤无效的说明 / 通知节点 ---
+    proxies = proxies.filter(proxy => {
+        const n = proxy.name || '';
+        // 匹配日期 (如2026-05-09), 流量 (如 71.42G / 1000.00G), 及其它通知用语
+        if (/(到期|有效|剩余|过期|流量|测试|更新|套餐|官网|群|联系客服|通知|\d{4}[-/]\d{2}[-/]\d{2}|\b\d+(\.\d+)?\s*[MGT]B?\s*[/｜|]\s*\d+(\.\d+)?\s*[MGT]B?)/i.test(n)) {
+            return false;
+        }
+        return true;
+    });
+
     proxies.forEach(proxy => {
         let name = proxy.name || '';
         
@@ -61,157 +65,43 @@ async function operator(proxies = [], targetPlatform, context) {
 
         // --- 解析倍率 ---
         let rate = '1.0';
-        // 匹配 0.5x, 1x, 2.0倍 等格式
-        const rateMatch = name.match(/(\d+(?:\.\d+)?)\s*(?:x|X|×|倍)/i);
+        // 第一种匹配：0.5x, 2倍；第二种匹配：倍率:1, 流量倍率：1.5
+        const rateMatch = name.match(/(\d+(?:\.\d+)?)\s*(?:x|X|×|倍)/i) || name.match(/倍率[:：\s]*(\d+(?:\.\d+)?)/i);
         if (rateMatch) {
             rate = rateMatch[1];
-        } else if (/高倍/.test(name)) { // 兼容某些写着“高倍”但是无数字的节点
+        } else if (/高倍/.test(name)) {
             rate = '高倍';
         }
         const rateStr = rate === '高倍' ? rate : `${rate}×`;
 
         // --- 识别来源 ---
-        // 从 Sub-Store 获取收集的子订阅名称(_subName)，或者配置名称
         let source = 'h'; 
         let subName = String(proxy._subName || proxy.collectionName || name); 
         
-        // 按照用户需求匹配：ss, dj, 本地为 h
         if (/shadowsocks/i.test(subName)) {
             source = 'ss';
         } else if (/顶级机场/i.test(subName)) {
             source = 'dj';
         } else {
-            source = 'h'; // 默认为本地(h)
+            source = 'h';
         }
 
-        // 临时保存解析后的信息，准备测速之后合并
-        proxy._parsedInfo = { region, source, rateStr };
-    });
-
-    // ==========================================
-    // 2. 解锁连通性检测逻辑
-    // ==========================================
-    // 兼容不同的网络请求挂载点
-    const httpClient = ($ && $.http) || (typeof $httpClient !== 'undefined' ? $httpClient : null);
-    
-    if ($ && $.ProxyUtils && httpClient) {
-        let internalProxies;
-        try {
-            // 将基础 proxy 信息转译为 Sub-Store 底层测试用格式
-            internalProxies = $.ProxyUtils.produce(proxies, 'ClashMeta', 'internal');
-        } catch (e) {
-            console.log(`[解锁检测] 节点转换失败: ${e.message}`);
+        // --- 提取特殊配置后缀备注 ---
+        let tags = [];
+        // 智能捕捉类似 "TK专线"、"特殊流媒体"、"IPLC" 标志，以及 "FW"、"V6"、"VIP" 等
+        const tagMatches = name.match(/[a-zA-Z0-9\u4e00-\u9fa5]*(?:专线|流媒体|三网高速|三网|中转|中继|直连|原生|家宽|优化|游戏|IEPL|IPLC|BGP|FW|V6|IPv6|VIP)/gi);
+        if (tagMatches) {
+            tags = [...new Set(tagMatches)];
         }
+        const tagStr = tags.length > 0 ? ` | ${tags.join(' ')}` : '';
 
-        if (internalProxies && internalProxies.length > 0) {
-            const concurrency = 8; // 控制并发量，避免导致自建 docker 后端卡死或主动熔断
-            
-            // 封装兼容不同写法的请求，返回状态
-            const doRequest = (url, node, timeout) => {
-                return new Promise((resolve) => {
-                    const options = { url, timeout, 'policy-descriptor': node };
-                     // 兼容某些环境需要 proxy
-                     options.proxy = node;
-
-                    try {
-                        // 使用 $.http.get() (如果返回 Promise)
-                        const req = httpClient.get(options, (err, res, body) => {
-                            // 回调方式支持 (Surge 规范的 $httpClient)
-                            if (err) resolve({ status: -1, error: err });
-                            else resolve({ status: res.status || res.statusCode, body });
-                        });
-                        
-                        // 兼容 Promise 方式返回 (Sub-Store axios 封装)
-                        if (req && req.then) {
-                            req.then(res => resolve({ status: res.status, body: res.body || res.data }))
-                               .catch(err => resolve({ status: err.response ? err.response.status : -2 }));
-                        }
-                    } catch(e) {
-                        resolve({ status: -3, error: e.message });
-                    }
-                });
-            };
-
-            async function testNode(proxy, node) {
-                let tags = [];
-                const reqs = [];
-                const timeout = 4000; // 单个请求限时 4s，严格控制总响应时长
-
-                // 1. Netflix 测试
-                reqs.push((async () => {
-                    const res = await doRequest('https://www.netflix.com/title/81215567', node, timeout);
-                    if (res.status === 200) tags.push('NF');
-                    else if (res.status === 404) tags.push('NF自制');
-                })());
-
-                // 2. ChatGPT 测试
-                reqs.push((async () => {
-                    const res = await doRequest('https://chatgpt.com/', node, timeout);
-                    if (res.status === 200 || res.status === 301 || res.status === 302 || res.status === 307) {
-                        tags.push('GPT');
-                    }
-                })());
-
-                // 3. Claude 测试
-                reqs.push((async () => {
-                    const res = await doRequest('https://claude.ai/login', node, timeout);
-                    if (res.status === 200 && res.body && !String(res.body).includes('App unavailable')) {
-                        tags.push('Claude');
-                    }
-                })());
-
-                // 4. Gemini 测试
-                reqs.push((async () => {
-                    const res = await doRequest('https://gemini.google.com/', node, timeout);
-                    if (res.status === 200 || res.status === 302 || res.status === 301) {
-                        tags.push('Gemini');
-                    }
-                })());
-
-                // 等待所有检测均结束
-                await Promise.allSettled(reqs);
-                proxy._tags = tags;
-            }
-
-            // 分批限流执行请求
-            for (let i = 0; i < proxies.length; i += concurrency) {
-                const batch = proxies.slice(i, i + concurrency);
-                const internalBatch = internalProxies.slice(i, i + concurrency);
-                const promises = batch.map((proxy, index) => testNode(proxy, internalBatch[index]));
-                await Promise.allSettled(promises);
-            }
-        }
-    } else {
-        // 如果没有支持库，在第一个节点里插入报错，方便用户溯源
-        if (proxies.length > 0) {
-            proxies[0]._tags = ['环境不支持检测'];
-        }
-    }
-
-    // ==========================================
-    // 3. 最终组合并命名
-    // ==========================================
-    proxies.forEach(proxy => {
-        const info = proxy._parsedInfo || {};
-        const region = info.region || '未知';
-        const source = info.source || 'h';
-        const rateStr = info.rateStr || '1.0×';
-        
-        // 计算节点序号序号 (按照 '地区-来源' 分组计算，保持编号独立性)
+        // --- 组合命名 ---
         const groupKey = `${region}-${source}`;
         if (!groupCount[groupKey]) groupCount[groupKey] = 0;
         groupCount[groupKey]++;
         const indexStr = groupCount[groupKey].toString().padStart(2, '0');
 
-        // 提取流媒体解锁 Tags
-        const tags = proxy._tags && proxy._tags.length > 0 ? proxy._tags.join(' ') + ' ' : '';
-        
-        // 最终组装格式示例：🇭🇰 香港 | ss | 0.5× | NF GPT 01
-        proxy.name = `${region} | ${source} | ${rateStr} | ${tags}${indexStr}`;
-
-        // 清理由于此脚本注入的临时自用属性以避免造成异常
-        delete proxy._parsedInfo;
-        delete proxy._tags;
+        proxy.name = `${region} | ${source} | ${rateStr} | ${indexStr}${tagStr}`;
     });
 
     return proxies;
