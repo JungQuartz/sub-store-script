@@ -61,13 +61,8 @@ async function operator(proxies = [], targetPlatform, context) {
         // 2. 剔除 skip-cert-verify 为 true 的节点（规避中间人风险或错误配置）
         const type = String(proxy.type || '').toLowerCase();
         if (proxy['skip-cert-verify'] === true || String(proxy['skip-cert-verify']).toLowerCase() === 'true') {
-            // 如果是 Hysteria2 或 VLESS 等高性能协议，保留但加警告标
-            if (['hysteria2', 'vless', 'tuic', 'hysteria'].includes(type)) {
-                proxy._isUnsafe = true; // 缓存警告状态，防止被后续重命名覆盖
-                if (!n.startsWith('⚠️')) proxy.name = '⚠️' + n; 
-            } else {
-                return false; // 其他普通协议开启 SCERT 直接剔除
-            }
+            proxy._isUnsafe = true; // 缓存警告状态，防止被后续重命名覆盖
+            if (!n.startsWith('⚠️')) proxy.name = '⚠️' + n; 
         }
 
         // 3. 剔除未采用 AEAD 加密的旧版 SS 节点（防主动探测）
