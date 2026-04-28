@@ -54,7 +54,7 @@ async function operator(proxies = [], targetPlatform, context) {
     proxies = proxies.filter(proxy => {
         const n = proxy.name || '';
         // 1. 匹配日期 (如2026-05-09), 流量 (如 71.42G / 1000.00G), 及其它通知用语
-        if (/(到期|有效|剩余|过期|流量|测试|更新|套餐|官网|群|联系客服|通知|\d{4}[-/]\d{2}[-/]\d{2}|\b\d+(\.\d+)?\s*[MGT]B?\s*[/｜|]\s*\d+(\.\d+)?\s*[MGT]B?)/i.test(n)) {
+        if (/(到期|有效|剩余|过期|流量(?!倍率)|测试|更新|套餐|官网|群|联系客服|通知|\d{4}[-/]\d{2}[-/]\d{2}|\b\d+(\.\d+)?\s*[MGT]B?\s*[/｜|]\s*\d+(\.\d+)?\s*[MGT]B?)/i.test(n)) {
             return false;
         }
 
